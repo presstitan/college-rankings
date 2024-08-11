@@ -294,3 +294,93 @@ function crp_manage_ranking_types_page() {
                 </tbody>
             </table>
             <button type="button" id="add-ranking-type" class="button">
+
+                <button type="button" id="add-ranking-type" class="button">Add Ranking Type</button>
+            <input type="submit" name="crp_save_ranking_types" class="button button-primary" value="Save Ranking Types">
+        </form>
+    </div>
+    <script>
+    jQuery(document).ready(function($) {
+        $('#add-ranking-type').click(function() {
+            var newRow = '<tr><td><input type="text" name="ranking_type[]" required></td><td><input type="text" name="ranking_criteria[]" required></td></tr>';
+            $('#ranking-types-tbody').append(newRow);
+        });
+    });
+    </script>
+    <?php
+}
+
+// Handle bulk creation
+function crp_handle_bulk_creation() {
+    if (!isset($_POST['crp_bulk_create_nonce']) || !wp_verify_nonce($_POST['crp_bulk_create_nonce'], 'crp_bulk_create')) {
+        wp_die('Security check failed');
+    }
+
+    $ranking_titles = $_POST['ranking_title'];
+    $ranking_types = $_POST['ranking_type'];
+    $focus_areas = $_POST['focus_area'];
+    $num_colleges = $_POST['num_colleges'];
+    $custom_methodologies = $_POST['custom_methodology'];
+    $post_types = $_POST['post_type'];
+    $criteria_weights = $_POST['criteria_weights'];
+
+    $created_posts = array();
+
+    for ($i = 0; $i < count($ranking_titles); $i++) {
+        $ranking_title = sanitize_text_field($ranking_titles[$i]);
+        $ranking_type = sanitize_text_field($ranking_types[$i]);
+        $focus_area = sanitize_text_field($focus_areas[$i]);
+        $num_college = intval($num_colleges[$i]);
+        $custom_methodology = sanitize_textarea_field($custom_methodologies[$i]);
+        $post_type = sanitize_text_field($post_types[$i]);
+        $weights = isset($criteria_weights[$i]) ? $criteria_weights[$i] : array();
+
+        // Fetch college data and generate rankings
+        $colleges = crp_fetch_college_data($focus_area, $num_college, $ranking_type, $weights);
+        $content = crp_generate_ranking_content($colleges, $focus_area, $ranking_type, $custom_methodology);
+
+        // Create post
+        $post_id = crp_create_ranking_post($ranking_title, $content, $focus_area, $ranking_type, $post_type);
+
+        if ($post_id) {
+            $created_posts[] = $post_id;
+        }
+    }
+
+    if (!empty($created_posts)) {
+        $redirect_url = add_query_arg(array(
+            'page' => 'crp-bulk-create',
+            'created' => implode(',', $created_posts)
+        ), admin_url('admin.php'));
+        wp_redirect($redirect_url);
+        exit;
+    } else {
+        wp_die('Error creating ranking posts');
+    }
+}
+add_action('admin_post_crp_bulk_create', 'crp_handle_bulk_creation');
+
+// Display admin notice for created posts
+function crp_admin_notices_bulk_create() {
+    if (isset($_GET['page']) && $_GET['page'] === 'crp-bulk-create' && isset($_GET['created'])) {
+        $created_posts = explode(',', $_GET['created']);
+        $count = count($created_posts);
+        $message = sprintf(_n('%s ranking post has been created.', '%s ranking posts have been created.', $count, 'college-rankings-plugin'), $count);
+        echo '<div class="notice notice-success is-dismissible"><p>' . $message . '</p></div>';
+    }
+}
+add_action('admin_notices', 'crp_admin_notices_bulk_create');
+
+// Activation hook
+function crp_activate() {
+    // Activation tasks if needed
+    flush_rewrite_rules();
+}
+register_activation_hook(__FILE__, 'crp_activate');
+
+// Deactivation hook
+function crp_deactivate() {
+    // Deactivation tasks if needed
+    flush_rewrite_rules();
+}
+register_deactivation_hook(__FILE__, 'crp_deactivate');
